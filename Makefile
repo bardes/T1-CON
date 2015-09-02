@@ -8,9 +8,9 @@ WARNINGS = -pedantic -Wall -Wextra -Wcast-align -Wcast-qual \
 	   -Wmissing-include-dirs -Wredundant-decls -Wshadow -Wsign-conversion \
 	   -Wstrict-overflow=5 -Wswitch-default -Wundef -Wno-unused
 
-CFLAGS = $(WARNINGS) -std=c11 -g -O3
+CFLAGS = $(WARNINGS) -std=c11 -g -O3 -march=native
 
-CPPFLAGS = -D DEBUG 
+CPPFLAGS = -DDBUG -DGSL_RANGE_CHECK_OFF
 
 LDFLAGS = -lgsl -lgslcblas -lm
 

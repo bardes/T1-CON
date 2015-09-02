@@ -11,7 +11,7 @@ typedef struct {
     const gsl_vector *x;        // Soluções do sistema
 } jacobi_matrix;
 
-auto double sum_elements(const gsl_vector *v)
+static double sum_elements(const gsl_vector *v)
 {
     double sum = 0;
     for(size_t i = 0; i < v->size; i++)
@@ -19,20 +19,31 @@ auto double sum_elements(const gsl_vector *v)
     return sum;
 }
 
-double compute_line(size_t line, const jacobi_matrix *m,
-                    gsl_vector *work_area)
+static void mul_elements(gsl_vector *result, const gsl_vector *a,
+                         const gsl_vector *b)
+                           
 {
-    gsl_matrix_get_row(work_area, m->A, line);
-    gsl_vector_mul(work_area, m->x);
+    if(a->size != b->size) return;
+    if(a->size != result->size) return;
+
+    for(size_t i = 0; i < a->size; ++i)
+        result->data[i] = a->data[i] * b->data[i];
+}
+
+static double compute_line(size_t line, const jacobi_matrix *m,
+                           gsl_vector *work_area)
+{
+    gsl_vector_const_view l = gsl_matrix_const_row(m->A, line);
+    mul_elements(work_area, &l.vector, m->x);
     return (gsl_vector_get(m->B, line) - sum_elements(work_area)) /
             gsl_vector_get(m->diag, line); 
 }
 
-double check_error(size_t line, const jacobi_matrix *m,
-                   gsl_vector *work_area)
+static double check_error(size_t line, const jacobi_matrix *m,
+                          gsl_vector *work_area)
 {
-    gsl_matrix_get_row(work_area, m->A, line);
-    gsl_vector_mul(work_area, m->x);
+    gsl_vector_const_view l = gsl_matrix_const_row(m->A, line);
+    mul_elements(work_area, &l.vector, m->x);
     return gsl_vector_get(m->B, line) - sum_elements(work_area)
            - gsl_vector_get(m->diag, line) * gsl_vector_get(m->x, line);
 }
@@ -75,7 +86,7 @@ int main()
     gsl_vector *tmp = gsl_vector_alloc(order);
     gsl_vector *wa = gsl_vector_alloc(order);
     
-    double err;
+    double err = NAN;
     size_t itrs;
     for(itrs = 0; itrs < max_iter; ++itrs) {
         for(size_t line = 0; line < order; ++line) {

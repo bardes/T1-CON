@@ -1,0 +1,10 @@
+*.o
+*.pdf
+*.zip
+*.tdb
+*~
+*.bak
+*.dep
+*.swp
+T2
+jacobi
