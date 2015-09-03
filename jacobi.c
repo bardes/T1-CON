@@ -2,17 +2,21 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <semaphore.h>
 
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_blas.h>
 
+#include <sys/stat.h>
+
 #include "utils.h"
 
 typedef struct {
-    const gsl_matrix *A;        // Coeficientes lineares com a diagonal zerada
-    const gsl_vector *diag;     // Diagonal dos coeficientes
-    const gsl_vector *B;        // Vetor de resultados
-    const gsl_vector *x;        // Soluções do sistema
+    gsl_matrix *A;        // Coeficientes lineares com a diagonal zerada
+    gsl_vector *diag;     // Diagonal dos coeficientes
+    gsl_vector *B;        // Vetor de resultados
+    gsl_vector *x;        // Soluções do sistema
 } jacobi_matrix;
 
 // Matriz constante (pode ser compartilhada entre threads)
@@ -71,6 +75,40 @@ static void *compute_block(void *tdata)
     pthread_exit(NULL);
 }
 
+static void read_jacobi_matrix(FILE *input, size_t order, jacobi_matrix *dest)
+{
+    // Cria a matriz e lê do arquivo de entrada
+    dest->A = gsl_matrix_alloc(order, order);
+    FATAL(dest->A, EXIT_FAILURE);
+    gsl_vector_view diag_view = gsl_matrix_diagonal(dest->A);
+    gsl_matrix_fscanf(input, dest->A);
+
+    // Aloca os vetores
+    dest->diag = gsl_vector_alloc(order);
+    dest->B    = gsl_vector_alloc(order);
+    dest->x    = gsl_vector_alloc(order);
+    FATAL(dest->diag && dest->B && dest->x, EXIT_FAILURE);
+
+    // Copia a diagonal para o vetor e zera a diagonal da matriz
+    gsl_vector_memcpy(dest->diag, &diag_view.vector);
+    gsl_vector_set_zero(&diag_view.vector);
+
+    // Lê o vetor de resultados 
+    gsl_vector_fscanf(stdin, dest->B);
+
+    // Começa com a primeira estimativa de solução [0, 0, 0, ..., 0]
+    gsl_vector_set_zero(dest->x);
+
+}
+
+static void free_jacobi_matrix(jacobi_matrix *m)
+{
+    gsl_matrix_free(m->A);
+    gsl_vector_free(m->diag);
+    gsl_vector_free(m->B);
+    gsl_vector_free(m->x);
+}
+
 int main(int argc, char *argv[])
 {
     // Determina a qtd. de threads a serem executadas
@@ -91,33 +129,15 @@ int main(int argc, char *argv[])
     size_t order, test_row, max_iter;
     scanf("%zu %zu %lf %zu", &order, &test_row, &max_err, &max_iter);
 
-    // Cria a matriz e lê do arquivo de entrada
-    gsl_matrix *A = gsl_matrix_alloc(order, order);
-    FATAL(A, EXIT_FAILURE);
-    gsl_vector_view diag_view = gsl_matrix_diagonal(A);
-    gsl_matrix_fscanf(stdin, A);
-
-    // Aloca os vetores
-    gsl_vector *diag = gsl_vector_alloc(order);
-    gsl_vector    *B = gsl_vector_alloc(order);
-    gsl_vector    *x = gsl_vector_alloc(order);
-    FATAL(diag && B && x, EXIT_FAILURE);
-
-    // Copia a diagonal para o vetor e zera a diagonal da matriz
-    gsl_vector_memcpy(diag, &diag_view.vector);
-    gsl_vector_set_zero(&diag_view.vector);
-
-    // Lê o vetor de resultados 
-    gsl_vector_fscanf(stdin, B);
-
-    // Começa com a primeira estimativa de solução [0, 0, 0, ..., 0]
-    gsl_vector_set_zero(x);
+    // Lê a matriz
+    jacobi_matrix m;
+    read_jacobi_matrix(stdin, order, &m);
     
-    // Matriz de threads
+    // Array de threads
     pthread_t *threads = malloc(sizeof(pthread_t) * n_threads);
     FATAL(threads, EXIT_FAILURE);
 
-    // Vetor para guardar os resultados parciais de uma iteração
+    // Vetor para guardar os resultados parciais de cada iteração
     gsl_vector *tmp = gsl_vector_alloc(order);
     FATAL(tmp, EXIT_FAILURE);
 
@@ -127,10 +147,7 @@ int main(int argc, char *argv[])
     thread_data *td = malloc(sizeof(thread_data) * n_threads);
     FATAL(td, EXIT_FAILURE);
     for(size_t i = 0; i < n_threads; ++i) {
-        td[i].m.A = A;
-        td[i].m.diag = diag;
-        td[i].m.B = B;
-        td[i].m.x = x;
+        td[i].m = m;
         td[i].from = i * step;
         td[i].to = (i+1) * step;
         td[i].result = tmp;
@@ -153,7 +170,7 @@ int main(int argc, char *argv[])
             pthread_join(threads[i], NULL);
         
         // Copia para o vetor de resultados
-        gsl_vector_memcpy(x, tmp);
+        gsl_vector_memcpy(m.x, tmp);
 
         // Verifia se o erro esta dentro do limite
         err = check_error(test_row, &td[0].m, tmp);
@@ -162,10 +179,7 @@ int main(int argc, char *argv[])
 
     printf("Iterações: %zu, Erro: %.3g\n", itrs, err);
 
-    gsl_matrix_free(A);
-    gsl_vector_free(diag);
-    gsl_vector_free(B);
-    gsl_vector_free(x);
+    free_jacobi_matrix(&m);
     gsl_vector_free(tmp);
     for(size_t i = 0; i < n_threads; ++i)
         gsl_vector_free(td[i].work_area);
