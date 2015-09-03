@@ -8,11 +8,11 @@ WARNINGS = -pedantic -Wall -Wextra -Wcast-align -Wcast-qual \
 	   -Wmissing-include-dirs -Wredundant-decls -Wshadow -Wsign-conversion \
 	   -Wstrict-overflow=5 -Wswitch-default -Wundef -Wno-unused
 
-CFLAGS = $(WARNINGS) -std=c11 -g -O3 -march=native
+CFLAGS = $(WARNINGS) -std=c11 -g -Og #-march=native
 
-CPPFLAGS = -DDBUG -DGSL_RANGE_CHECK_OFF
+CPPFLAGS = -DGSL_RANGE_CHECK_OFF
 
-LDFLAGS = -lgsl -lgslcblas -lm
+LDFLAGS = -lgsl -lgslcblas -lm -lpthread
 
 SRCS = $(shell find -name '*.c')
 HDRS = $(shell find -name '*.h')
