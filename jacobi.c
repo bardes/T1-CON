@@ -68,8 +68,6 @@ static double check_error(size_t line, const jacobi_matrix *m,
 static void *compute_block(void *tdata)
 {
     thread_data *d = tdata;
-    //fprintf(stderr, "Thread disparada da linha %zu até a %zu.\n",
-    //        d->from, d->to);
     for(size_t line = d->from; line < d->to; ++line)
         d->result->data[line] = compute_line(line, &d->m, d->work_area);
     pthread_exit(NULL);

@@ -8,7 +8,7 @@ WARNINGS = -pedantic -Wall -Wextra -Wcast-align -Wcast-qual \
 	   -Wmissing-include-dirs -Wredundant-decls -Wshadow -Wsign-conversion \
 	   -Wstrict-overflow=5 -Wswitch-default -Wundef -Wno-unused
 
-CFLAGS = $(WARNINGS) -std=c11 -g -Og #-march=native
+CFLAGS = $(WARNINGS) -std=c11 -g -Ofast -march=native
 
 CPPFLAGS = -DGSL_RANGE_CHECK_OFF
 
@@ -16,7 +16,7 @@ LDFLAGS = -lgsl -lgslcblas -lm -lpthread
 
 SRCS = $(shell find -name '*.c')
 HDRS = $(shell find -name '*.h')
-RES  =
+RES  = matrizes
 
 OBJS = $(SRCS:=.o)
 DEPS = $(SRCS:=.dep)
@@ -41,6 +41,6 @@ clean:
 	rm -f $(OBJS) $(DEPS) $(EXEC);
 
 zip:
-	zip -r $(EXEC).zip $(SRCS) $(HDRS) Makefile 
+	zip -r $(EXEC).zip $(SRCS) $(HDRS) $(RES) Makefile 
 
 -include $(DEPS)
