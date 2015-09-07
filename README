@@ -1,0 +1,20 @@
+## Dependências ##
+-GNU Scientific Library
+
+Para instalar dependencias:
+(Ubuntu)$ apt-get install libgsl0-dev
+  (Arch)$ pacman -S gsl
+
+## Compilação ##
+Para compilar basta usar o comando:
+$ make
+
+## Execução ##
+Para executar faça:
+$ ./jacobi [n_threads] < matriz
+caso n_threads seja omitido o programa usará apenas 1 thread.
+
+## Testes ##
+Para executar todos os testes de uma vez há um script chamado 'test_all.sh'
+dentro da pasta 'matrizes'. Note que para funcionar o progrma 'jacobi' deve
+ser compilado antes de executar o script.

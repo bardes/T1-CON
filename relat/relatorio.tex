@@ -1,0 +1,201 @@
+\documentclass[11pt,towside]{article}
+\usepackage[brazilian]{babel}			% Ajusta a língua para Portugês Brasileiro
+\usepackage{amsmath}					% Permite escrever fórmulas matemáticas
+\usepackage[utf8]{inputenc}			% Lê o arquivo fonte codificado em UTF-8
+\usepackage[T1]{fontenc}				% Codifica os tipos no arquivo de saída usando T1
+\usepackage[a4paper]{geometry}			% Ajusta o tamanho do papel para A4
+\usepackage{titling}					% Permite fazer ajustes no título do artigo
+\usepackage{fancyhdr}					% Permite ajustar cabeçalhos e rodapés
+\usepackage{indentfirst}				% Ajusta a indentação do primeiro parágrafo
+\usepackage{pgfplotstable}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[section]{placeins}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{imakeidx}
+\makeindex[columns=3, title=Alphabetical Index, intoc]
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+  language=C,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=left,
+  numberstyle=\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  breaklines=fasle,
+  breakatwhitespace=true,
+  tabsize=3,
+  frame=L
+}
+
+
+\graphicspath{{img/}}
+
+%% Define estilo das tabelas %%
+\pgfplotstableset {
+	every head row/.style={before row=\toprule,after row=\midrule},
+    every last row/.style={after row=\bottomrule}
+}
+            
+%% Inicio do documento %%
+\usepackage{amsmath}
+\begin{document}
+
+%% Título do artigo %%
+\begin{titlepage}
+\begin{center}
+
+\textsc{\Huge Universidade de São Paulo}\\[5mm]
+\textsc{\Large Análise de Desempenho Concorrente Para o Método de Jacobi-Richardson}
+
+\vfill
+{\Huge SSC0143 -- Programação Concorrente}
+\vfill
+
+\begin{tabular}{rl}
+\emph{Professor:}& {\Large Júlio Cezar Estrella} \\[5mm]
+\emph{Alunos:}& {\Large Luz Padilla} \\[2mm]
+& {\Large Paulo B. N. Nascimento}
+\end{tabular}\\[25mm]
+
+\end{center}
+\end{titlepage}
+
+\tableofcontents
+\vspace{1cm}
+\hrule
+\vspace{1cm}
+
+%% Inicio do artigo %%
+\section{Introdução}
+O método de Jacobi-Richardson é um algorítimo iterativo usado para achar soluções aproximadas para sistemas de equações lineares que possam ser representados através de matrizes diagonalmente dominantes.
+
+Esse método é particularmente interessante para ser analisado, pois possui grande potencial de paralelização, uma vez que cada iteração depende apenas dos dados da anterior, e as linhas são independentes.
+
+A proposta é criar um algorítimo para executar o método de Jacobi-Richardson de maneira eficiente, paralelizando os cálculos onde possível.
+\pagebreak
+
+\section{Algorítimo}
+Dado o seguinte sistema linear: $Ax=B$, o vetor $x$ pode ser aproximado (iterativamente) usando a seguinte recorrência:
+\begin{align}
+\label{eq:rec}
+x^{(k)} = D^{-1}(b - Rx^{(k-1)})
+\end{align}
+
+Onde $D$ é uma matriz contendo apenas a diagonal de $A$, e $R = A - D$. Para a primeira iteração podem ser adotados valores arbitrários para $x^{(0)}$.
+
+A partir dessa recorrência podemos determinar a seguinte fórmula para calcular cada elemento de $x^{(k)}$:
+\begin{align}
+\label{eq:elem}
+x^{(k)}_i = \frac{1}{a_{ii}}\bigg[b_i - \sum_{i\neq j}a_{ij}x^{(k-1)}_j\bigg]
+\end{align}
+
+\section{Análise do Código (github.com/bardes/T1-CON)}
+
+Como cada linha da matriz pode ser calculada concomitantemente, a função \emph{comput\_line} foi criada para calcular cada elemento de $x^{(k)}$ de maneira independente. Chamar essa função uma vez para cada linha equivale a uma iteração do algorítimo.
+
+\begin{lstlisting}
+static double compute_line(size_t line, const jacobi_matrix *m,
+                           gsl_vector *work_area)
+{
+    gsl_vector_const_view l = gsl_matrix_const_row(m->A, line);
+    mul_elements(work_area, &l.vector, m->x);
+    return (gsl_vector_get(m->B, line) - sum_elements(work_area)) /
+            gsl_vector_get(m->diag, line);
+}
+\end{lstlisting}
+
+Essa implementação essencialmente adapta a Formula \ref{eq:elem} para uma função C. Vale notar que a função recebe como argumento um \emph{buffer} onde são guardados os resultados parciais. Esse buffer é passado como argumento para evitar \emph{overhead} de múltiplas alocações de memória para cada iteração.
+
+A função \emph{compute\_block} é usada para dividir o trabalho entre múltiplas \emph{threads} que computam blocos de linhas em paralelo.
+
+\begin{lstlisting}
+static void *compute_block(void *tdata)
+{
+    thread_data *d = tdata;
+    for(size_t line = d->from; line < d->to; ++line)
+        d->result->data[line] = compute_line(line, &d->m, d->work_area);
+    pthread_exit(NULL);
+}
+\end{lstlisting}
+
+O loop principal é bastante simples:
+
+\begin{lstlisting}
+double err = 0; size_t itrs;
+for(itrs = 0; itrs < max_iter; ++itrs) {
+
+    // Dispara cada thread
+    for(size_t i = 0; i < n_threads; ++i)
+        if(pthread_create(threads + i, NULL, compute_block, td + i))
+            FATAL_MSG(0, EXIT_FAILURE, "Failed to create thread!");
+
+    // Espera os resultados
+    for(size_t i = 0; i < n_threads; ++i)
+        pthread_join(threads[i], NULL);
+
+    // Copia para o vetor de resultados
+    gsl_vector_memcpy(m.x, tmp);
+
+    // Verifia se o erro esta dentro do limite
+    err = check_error(test_row, &td[0].m, tmp);
+    if(fabs(err) < max_err) break;
+}
+\end{lstlisting}
+
+A cada iteração o número de \emph{threads} especificado pelo usuário é criado e o trabalho dividido entre elas. Após o término de todas as \emph{threads} o resultado parcial ($tmp$) é movido para o vetor $x$ e o erro é verificado.
+
+\section{Resultados}
+Os testes foram executados em uma máquina x86\_64 com 4 núcleos de 1GHz. Cada matriz foi testada 10 vezes seguidas, calculando-se o tempo médio e o desvio padrão dos tempos.
+
+\begin{table}[h!]\centering
+	\pgfplotstabletypeset[col sep=tab]{r1}
+	\caption{Dados coletados com 1 thread.}
+\end{table}
+
+Aqui fica claro que a complexidade do algorítimo é $O(n^2)$ em relação a ordem da matriz, o que é esperado, já que esse é de fato o número de elementos de uma matriz quadrada.
+
+Vale a pena notar também que o desvio padrão também cresce conforme a ordem da matriz, o que novamente é esperado, já que quanto mais tempo a matriz leva para ser processada, maior a quantidade de eventos externos que alteram o tempo de execução, como por exemplo outros processos ou mesmo o próprio escalonador do S.O.
+
+\begin{table}[h!]\centering
+	\pgfplotstabletypeset[col sep=tab]{r2}
+	\caption{Dados coletados com 2 threads.}
+\end{table}
+
+Ao adicionar uma segunda thread os ganhos de performance são notáveis. As matrizes de ordem menor mostram um ganho menor, porém ainda significativos. Usando a matriz de ordem 4000 como referência podemos calcular o \emph{speedup}: $1-\frac{1196.04}{733.94} \approx 0.62961 = 62.96\%$. Comparando-se esse valor ao valor ótimo de 100\% nota-se que uma porção do desempenho da versão paralela é perdida devido a \emph{overheads} causados tanto pela aplicação quanto pelo S.O. para lidar com as threads.
+
+\begin{table}[h!]\centering
+	\pgfplotstabletypeset[col sep=tab]{r4}
+	\caption{Dados coletados com 4 threads.}
+\end{table}
+Com 4 threads os ganhos já não são mais tão grandes, na verdade para matrizes pequenas a execução fica {\bf mais lenta} do que com 2 threads. Ainda assim para as matrizes maiores os ganhos ainda aparecem.
+
+Nesse caso o \emph{speedup} fica bastante abaixo do valor ótimo de 400\%: $1-\frac{1196.04}{665.18} \approx 0.79806 = 79.81\%$. Essa diferença grande pode ser explicada pelas limitações de hardware, já que com 4 threads a carga de CPU fica superior ao número de núcleos, forçando o escalonamento constante de tarefas, o que diminui bastante a eficiência da aplicação.
+
+\section{Conclusão}
+Os dados coletados mostram que de fato o método de Jacobi-Richardson pode ter ganhos de performance utilizando-se de técnicas de programação concorrente, porém é necessário medir e estudar esses ganhos, já que múltiplos fatores como escalonador, carga do sistema, número de núcleos, etc... influenciam a eficácia da implementação paralela do algorítimo.
+
+%% Bibliografia %%
+\begin{thebibliography}{5}
+\bibitem{ref1}
+Ron Larson, David C. Falvo
+\\\textit{Elementary Linear Algebra, 6th Edition} ISBN-13: 9780618783762
+ 
+\bibitem{ref2} 
+Marina Andretta
+\\\texttt{http://www.icmc.usp.br/~andretta/ensino/aulas/sme0301-1-10/
+\\sistemaslinearesiterativosjacobirichardson.pdf}
+\end{thebibliography}
+
+\end{document}

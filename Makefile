@@ -1,5 +1,6 @@
-# Grupo: 
-# Paulo Bardes                    8531932
+# Grupo: 25a
+# Paulo Bardes
+# Luz Padilla
 
 EXEC = jacobi
 
@@ -16,7 +17,7 @@ LDFLAGS = -lgsl -lgslcblas -lm -lpthread
 
 SRCS = $(shell find -name '*.c')
 HDRS = $(shell find -name '*.h')
-RES  = matrizes
+RES  = matrizes README
 
 OBJS = $(SRCS:=.o)
 DEPS = $(SRCS:=.dep)
@@ -38,7 +39,7 @@ $(EXEC): $(DEPS) $(OBJS)
 	$(CC) -MM -MT "$@ $(@:.dep=.o)" $(CPPFLAGS) $< -MF $@
 
 clean:
-	rm -f $(OBJS) $(DEPS) $(EXEC);
+	rm -f $(OBJS) $(DEPS) $(EXEC)
 
 zip:
 	zip -r $(EXEC).zip $(SRCS) $(HDRS) $(RES) Makefile 
